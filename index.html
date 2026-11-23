@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buku Nilai Kelas</title>
+<style>
+  :root {
+    --kertas:#fbfaf5; --tinta:#1d2b3a; --garis:#c9d3de; --biru:#1f4e8c; --merah:#b3372f; --panel:#ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --kertas:#14191f; --tinta:#e6ebf1; --garis:#33404e; --biru:#7fb0ee; --merah:#ee8a82; --panel:#1b222a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--kertas); color:var(--tinta); font-family:Georgia,"Times New Roman",serif; line-height:1.5; }
+  .tata { display:grid; grid-template-columns: 340px 1fr; min-height:100vh; }
+  aside {
+    background:#10161d; color:#d7e0ea; padding:18px 16px; border-right:1px solid var(--garis);
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size:.82rem;
+  }
+  aside h2 { font-family:Georgia,serif; font-size:1.1rem; margin:0 0 4px; color:#fff; }
+  aside p.ket { font-family:Georgia,serif; margin:0 0 14px; color:#9fb0c2; font-size:.9rem; }
+  .kotak { background:#18212b; border:1px solid #2c3a49; border-radius:6px; padding:10px; margin-bottom:12px; }
+  .kotak .judul { font-family:Georgia,serif; color:#9fb0c2; margin-bottom:6px; }
+  pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+  .kw { color:#7fb0ee; font-weight:700; }
+  .str { color:#e8c070; }
+  .num { color:#8fd19e; }
+  .arti { font-family:Georgia,serif; color:#c3cfdb; margin-top:8px; }
+  .meta { color:#7d8da0; margin-top:6px; }
+  .baru { border-color:#7fb0ee; }
+  main { padding:24px 20px 48px; max-width:760px; width:100%; }
+  h1 { font-size:2rem; margin:0 0 4px; }
+  p.sub { margin:0 0 24px; opacity:.75; }
+  form { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; background:var(--panel); border:1px solid var(--garis); padding:14px; border-radius:6px; }
+  input, button { font:inherit; padding:9px 10px; border:1px solid var(--garis); border-radius:4px; background:var(--kertas); color:var(--tinta); }
+  button { cursor:pointer; background:var(--biru); color:#fff; border-color:var(--biru); }
+  button.kecil { background:transparent; color:var(--biru); border-color:var(--garis); padding:4px 9px; }
+  button.hapus { color:var(--merah); }
+  :focus-visible { outline:3px solid var(--biru); outline-offset:2px; }
+  table { width:100%; border-collapse:collapse; margin-top:20px; background:var(--panel); border:1px solid var(--garis); }
+  th, td { text-align:left; padding:10px; border-bottom:1px solid var(--garis); }
+  th { background:color-mix(in srgb, var(--garis) 35%, transparent); }
+  .kosong { text-align:center; padding:28px; opacity:.7; }
+  #pesan { min-height:1.5em; margin-top:10px; color:var(--merah); }
+  .tabel-wrap { overflow-x:auto; }
+  @media (max-width: 860px) {
+    .tata { grid-template-columns:1fr; }
+    aside { position:static; height:auto; max-height:360px; }
+  }
+  @media (max-width: 560px) { form { grid-template-columns:1fr 1fr; } form input:first-child { grid-column:1 / -1; } }
+</style>
+</head>
+<body>
+<div class="tata">
+  <aside>
+    <h2>Jendela SQL</h2>
+    <p class="ket">Setiap klik di web akan menjalankan perintah SQL. Lihat di sini apa yang dikirim ke database.</p>
+    <div class="kotak">
+      <div class="judul">Struktur tabel (dibuat sekali di awal)</div>
+      <pre id="skema"></pre>
+    </div>
+    <div id="log"></div>
+  </aside>
+
+  <main>
+    <h1>Buku Nilai Kelas</h1>
+    <p class="sub">Data tersimpan di database PostgreSQL.</p>
+
+    <form id="form">
+      <input id="nama" placeholder="Nama siswa" required>
+      <input id="kelas" placeholder="Kelas" required>
+      <input id="nilai" type="number" min="0" max="100" placeholder="Nilai">
+      <button type="submit" id="tombol">Tambah siswa</button>
+    </form>
+    <div id="pesan" role="alert"></div>
+
+    <div class="tabel-wrap">
+      <table>
+        <thead><tr><th>Nama</th><th>Kelas</th><th>Nilai</th><th>Aksi</th></tr></thead>
+        <tbody id="isi"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let sedangEdit = null;
+
+  const SKEMA = "CREATE TABLE siswa (\n  id SERIAL PRIMARY KEY,\n  nama VARCHAR(100) NOT NULL,\n  kelas VARCHAR(20) NOT NULL,\n  nilai INTEGER DEFAULT 0\n);";
+
+  // Mewarnai kata kunci SQL supaya mudah dibaca
+  function warnai(teks) {
+    const aman = teks.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return aman
+      .replace(/('(?:[^']|'')*')/g, '<span class="str">$1</span>')
+      .replace(/\b(SELECT|FROM|INSERT INTO|VALUES|UPDATE|SET|DELETE|WHERE|ORDER BY|DESC|RETURNING|CREATE TABLE|PRIMARY KEY|NOT NULL|DEFAULT|SERIAL|VARCHAR|INTEGER)\b/g, '<span class="kw">$1</span>')
+      .replace(/(\s|=|,|\()(\d+)(?=\s|,|\)|;|$)/g, '$1<span class="num">$2</span>');
+  }
+
+  $("skema").innerHTML = warnai(SKEMA);
+
+  // Menambah catatan baru di jendela SQL (yang terbaru di atas)
+  function catat(log) {
+    if (!log) return;
+    const div = document.createElement("div");
+    div.className = "kotak baru";
+    const pre = document.createElement("pre");
+    pre.innerHTML = warnai(log.sql);
+    const arti = document.createElement("div");
+    arti.className = "arti";
+    arti.textContent = log.arti;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = log.baris + " baris terpengaruh \u2022 " + log.waktu;
+    div.append(pre, arti, meta);
+    const wadah = $("log");
+    wadah.prepend(div);
+    setTimeout(() => div.classList.remove("baru"), 1500);
+    while (wadah.children.length > 12) wadah.lastChild.remove();
+  }
+
+  async function muat() {
+    const res = await fetch("/api/siswa");
+    const hasil = await res.json();
+    catat(hasil.log);
+    const data = hasil.rows;
+    const isi = $("isi");
+    if (!Array.isArray(data) || data.length === 0) {
+      isi.innerHTML = '<tr><td colspan="4" class="kosong">Belum ada siswa. Isi formulir di atas lalu klik Tambah siswa.</td></tr>';
+      return;
+    }
+    isi.innerHTML = "";
+    data.forEach((s) => {
+      const tr = document.createElement("tr");
+      [s.nama, s.kelas, s.nilai].forEach((v) => {
+        const td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      const aksi = document.createElement("td");
+      const ubah = document.createElement("button");
+      ubah.className = "kecil"; ubah.textContent = "Ubah";
+      ubah.onclick = () => {
+        sedangEdit = s.id;
+        $("nama").value = s.nama; $("kelas").value = s.kelas; $("nilai").value = s.nilai;
+        $("tombol").textContent = "Simpan perubahan";
+        $("nama").focus();
+      };
+      const hapus = document.createElement("button");
+      hapus.className = "kecil hapus"; hapus.textContent = "Hapus";
+      hapus.onclick = async () => {
+        if (!confirm("Hapus " + s.nama + "?")) return;
+        const r = await fetch("/api/siswa/" + s.id, { method: "DELETE" });
+        catat((await r.json()).log);
+        muat();
+      };
+      aksi.append(ubah, " ", hapus);
+      tr.appendChild(aksi);
+      isi.appendChild(tr);
+    });
+  }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("pesan").textContent = "";
+    const body = JSON.stringify({ nama: $("nama").value, kelas: $("kelas").value, nilai: $("nilai").value });
+    const url = sedangEdit ? "/api/siswa/" + sedangEdit : "/api/siswa";
+    const res = await fetch(url, { method: sedangEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body });
+    const hasil = await res.json();
+    if (!res.ok) {
+      $("pesan").textContent = hasil.error || "Terjadi kesalahan.";
+      return;
+    }
+    catat(hasil.log);
+    sedangEdit = null;
+    $("form").reset();
+    $("tombol").textContent = "Tambah siswa";
+    muat();
+  });
+
+  muat();
+</script>
+</body>
+</html>
